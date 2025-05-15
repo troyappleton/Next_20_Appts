@@ -1,46 +1,54 @@
 import streamlit as st
+import pandas as pd
+import mysql.connector
+from mysql.connector import Error
 
-# Sample data (replace with your own source)
-tasks = [
-    {
-        "title": "Call to discuss proposal with Dave",
-        "contact": "Dave Wilson",
-        "time": "02:15 - 03:00 PM",
-        "type": "Call"
-    },
-    {
-        "title": "Intro call",
-        "contact": "Diana Scott",
-        "time": "05:45 - 04:50 AM",
-        "type": "Call"
-    },
-    {
-        "title": "Zoom meeting with Katie",
-        "contact": "Katie Bledsoe",
-        "time": "12:30 - 01:00 PM",
-        "type": "Zoom"
-    },
-    {
-        "title": "Call with John",
-        "contact": "John Appleseed",
-        "time": "01:30 - 02:00 PM",
-        "type": "Call"
-    },
-    {
-        "title": "Meeting about Q2 goals",
-        "contact": "Jane Smith",
-        "time": "03:30 - 04:00 PM",
-        "type": "Zoom"
-    }
-]
+# ---------- DATABASE CONFIG ----------
+DB_CONFIG = {
+    'host': '74.208.75.3',
+    'database': 'crm_db',
+    'user': 'crm_user',
+    'password': 'SpaceRace2020!!',
+    'port': 3306
+}
 
-# Page config
+# ---------- SQL QUERY ----------
+QUERY = """
+SELECT 
+  activity_type,
+  city,
+  create_uid,
+  date_deadline,
+  display_name
+FROM crm_db.crm_data
+WHERE activity_type IN ('Pop-Up', 'Store Visit', 'Meeting', 'KDM Event')
+  AND date_deadline <= CURRENT_TIMESTAMP
+  AND date_closed != '2020-01-01 00:00:00'
+ORDER BY date_deadline DESC
+LIMIT 20;
+"""
+
+# ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Today's Tasks", layout="centered")
-
-# Title
 st.markdown("### 📋 Today's Tasks")
 
-# CSS: smaller card, scrollable container
+# ---------- LOAD DATA ----------
+def load_data():
+    try:
+        connection = mysql.connector.connect(**DB_CONFIG)
+        if connection.is_connected():
+            df = pd.read_sql(QUERY, connection)
+            return df
+    except Error as e:
+        st.error(f"Database error: {e}")
+        return pd.DataFrame()
+    finally:
+        if 'connection' in locals() and connection.is_connected():
+            connection.close()
+
+df = load_data()
+
+# ---------- CSS STYLING ----------
 st.markdown("""
 <style>
 .scroll-container {
@@ -67,16 +75,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Scrollable task list
-st.markdown('<div class="scroll-container">', unsafe_allow_html=True)
+# ---------- DISPLAY TASKS ----------
+if df.empty:
+    st.info("No tasks found.")
+else:
+    st.markdown(f"### Scheduled ({len(df)})")
+    st.markdown('<div class="scroll-container">', unsafe_allow_html=True)
 
-for task in tasks:
-    icon = "📞" if task["type"].lower() == "call" else "💻"
-    st.markdown(f"""
-    <div class="task-card">
-        <div class="task-title">{icon} {task['title']}</div>
-        <div class="task-meta">{task['contact']} • {task['time']}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    for _, row in df.iterrows():
+        icon = "📍" if row["activity_type"] in ["Pop-Up", "Store Visit"] else "💼"
+        st.markdown(f"""
+        <div class="task-card">
+            <div class="task-title">{icon} {row['display_name']}</div>
+            <div class="task-meta">{row['activity_type']} • {row['city']} • {row['date_deadline']}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
